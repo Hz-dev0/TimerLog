@@ -341,6 +341,7 @@ $('addBtn').addEventListener('click', () => {
 onAuthStateChanged(auth, user => {
   if (user) {
     uid = user.uid;
+    console.log('你的 uid：', uid);
     subscribeWeek(weekDays(weekOffset));
   } else {
     signInAnonymously(auth).catch(() => showToast('登入失敗，請重整頁面'));
