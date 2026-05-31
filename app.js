@@ -8,7 +8,7 @@ import {
   query, where, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import {
-  getAuth, signInAnonymously, onAuthStateChanged
+  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
@@ -338,16 +338,36 @@ $('addBtn').addEventListener('click', () => {
 });
 
 // ── Auth & boot ───────────────────────────────────────────────────────────────
+const provider = new GoogleAuthProvider();
+
+function renderLogin() {
+  document.getElementById('app').style.display = 'none';
+  let screen = document.getElementById('loginScreen');
+  if (!screen) {
+    screen = document.createElement('div');
+    screen.id = 'loginScreen';
+    screen.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:16px;';
+    const title = document.createElement('p');
+    title.textContent = '時間紀錄';
+    title.style.cssText = 'font-size:18px;font-weight:500;color:var(--text);';
+    const btn = document.createElement('button');
+    btn.textContent = '用 Google 登入';
+    btn.style.cssText = 'font-family:var(--font-body);font-size:15px;padding:11px 24px;border-radius:8px;border:1px solid var(--border-mid);background:var(--surface);color:var(--text);cursor:pointer;';
+    btn.addEventListener('click', () => signInWithPopup(auth, provider).catch(() => showToast('登入失敗，請再試')));
+    screen.append(title, btn);
+    document.body.appendChild(screen);
+  }
+  screen.style.display = 'flex';
+}
+
 onAuthStateChanged(auth, user => {
+  const loginScreen = document.getElementById('loginScreen');
   if (user) {
     uid = user.uid;
-    console.log('你的 uid：', uid);
-    const banner = document.createElement('div');
-    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#1A1714;color:#F5F2ED;font-family:monospace;font-size:12px;padding:10px 16px;z-index:999;word-break:break-all;';
-    banner.textContent = 'uid: ' + uid;
-    document.body.appendChild(banner);
+    if (loginScreen) loginScreen.style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
     subscribeWeek(weekDays(weekOffset));
   } else {
-    signInAnonymously(auth).catch(() => showToast('登入失敗，請重整頁面'));
+    renderLogin();
   }
 });
