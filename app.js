@@ -342,6 +342,10 @@ onAuthStateChanged(auth, user => {
   if (user) {
     uid = user.uid;
     console.log('你的 uid：', uid);
+    const banner = document.createElement('div');
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#1A1714;color:#F5F2ED;font-family:monospace;font-size:12px;padding:10px 16px;z-index:999;word-break:break-all;';
+    banner.textContent = 'uid: ' + uid;
+    document.body.appendChild(banner);
     subscribeWeek(weekDays(weekOffset));
   } else {
     signInAnonymously(auth).catch(() => showToast('登入失敗，請重整頁面'));
