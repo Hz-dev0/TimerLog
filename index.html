@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>時間紀錄</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+TC:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+  <header>
+    <div class="week-nav">
+      <button id="prevWeek" aria-label="上一週">←</button>
+      <span id="weekRange"></span>
+      <button id="nextWeek" aria-label="下一週">→</button>
+    </div>
+  </header>
+
+  <main id="weekBody"></main>
+
+  <footer id="addBar">
+    <div id="minDrawer">
+      <div class="min-scroll" id="minScroll"></div>
+    </div>
+    <input type="text" id="nameIn" placeholder="事件名稱（可之後補）" autocomplete="off">
+    <div id="minTrigger" role="button" tabindex="0" aria-label="選擇分鐘">
+      <span class="placeholder">分</span>
+    </div>
+    <button id="addBtn" aria-label="新增">+</button>
+  </footer>
+</div>
+
+<div id="toast"></div>
+
+<!-- Firebase -->
+<script type="module" src="app.js"></script>
+</body>
+</html>
