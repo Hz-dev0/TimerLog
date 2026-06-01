@@ -1,6 +1,3 @@
-// ── Firebase setup ──────────────────────────────────────────────────────────
-// Replace these values with your own Firebase project config:
-// Firebase Console → Project Settings → Your apps → SDK setup → Config
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
   getFirestore, collection, doc,
@@ -8,7 +5,7 @@ import {
   query, where, orderBy, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import {
-  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
+  getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
@@ -21,38 +18,38 @@ const firebaseConfig = {
 };
 
 const firebaseApp = initializeApp(firebaseConfig);
-const db  = getFirestore(firebaseApp);
+const db   = getFirestore(firebaseApp);
 const auth = getAuth(firebaseApp);
 
-// ── State ────────────────────────────────────────────────────────────────────
-let uid = null;
-let weekOffset = 0;        // 0 = this week, -1 = last week …
-let editKey = null;        // "YYYY-MM-DD"
-let editId  = null;        // Firestore doc id
-let unsub   = null;        // Firestore listener unsubscribe
-let localData = {};        // { "YYYY-MM-DD": [ {id, name, min, ts} ] }
+// ── Constants ────────────────────────────────────────────────────────────────
+const MIN_OPTIONS = [15, 20, 25, 30, 45, 60, 90];
+const DAY_NAMES   = ['日','一','二','三','四','五','六'];
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── State ─────────────────────────────────────────────────────────────────────
+let uid         = null;
+let weekOffset  = 0;
+let editKey     = null;
+let editId      = null;
+let unsub       = null;
+let localData   = {};
+let selectedMin = null;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 
-function dayKey(d) {
-  return d.toISOString().slice(0, 10);
-}
+function dayKey(d) { return d.toISOString().slice(0, 10); }
 
 function today() {
-  const d = new Date(); d.setHours(0,0,0,0); return d;
+  const d = new Date(); d.setHours(0, 0, 0, 0); return d;
 }
 
 function weekDays(wOffset) {
   const base = today();
-  // Monday-based week
-  const dow = base.getDay() === 0 ? 6 : base.getDay() - 1;
-  const monday = new Date(base);
-  monday.setDate(base.getDate() - dow + wOffset * 7);
+  const dow  = base.getDay() === 0 ? 6 : base.getDay() - 1;
+  const mon  = new Date(base);
+  mon.setDate(base.getDate() - dow + wOffset * 7);
   return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    return d;
+    const d = new Date(mon); d.setDate(mon.getDate() + i); return d;
   });
 }
 
@@ -64,48 +61,51 @@ function showToast(msg) {
   const t = $('toast');
   t.textContent = msg;
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2200);
+  setTimeout(() => t.classList.remove('show'), 2400);
 }
 
-function setSyncDot(state) { // 'syncing' | 'synced' | ''
+function setSyncDot(state) {
   const dot = document.querySelector('.sync-dot');
-  if (!dot) return;
-  dot.className = 'sync-dot ' + state;
+  if (dot) dot.className = 'sync-dot ' + state;
 }
 
-// ── Firestore ────────────────────────────────────────────────────────────────
-function colRef() {
-  return collection(db, 'users', uid, 'events');
-}
+// ── Firestore ─────────────────────────────────────────────────────────────────
+function colRef() { return collection(db, 'users', uid, 'events'); }
 
 function subscribeWeek(days) {
   if (unsub) unsub();
   const keys = days.map(dayKey);
-  const q = query(colRef(), where('date', 'in', keys), orderBy('ts', 'asc'));
+  // Query only by date, sort client-side to avoid needing composite index
+  const q = query(colRef(), where('date', 'in', keys));
   unsub = onSnapshot(q, snap => {
-    // Clear local for these dates
     keys.forEach(k => { localData[k] = []; });
     snap.forEach(d => {
       const data = d.data();
       if (!localData[data.date]) localData[data.date] = [];
-      localData[data.date].push({ id: d.id, name: data.name || '', min: data.min || 0 });
+      localData[data.date].push({
+        id:  d.id,
+        name: data.name || '',
+        min:  data.min  || 0,
+        ts:   data.ts?.toMillis?.() || 0
+      });
+    });
+    // Sort each day by timestamp client-side
+    keys.forEach(k => {
+      localData[k].sort((a, b) => a.ts - b.ts);
     });
     render();
+  }, err => {
+    showToast('讀取失敗：' + err.code);
   });
 }
 
 async function addEvent(name, min) {
   setSyncDot('syncing');
   try {
-    await addDoc(colRef(), {
-      date: dayKey(today()),
-      name,
-      min,
-      ts: serverTimestamp()
-    });
+    await addDoc(colRef(), { date: dayKey(today()), name, min, ts: serverTimestamp() });
     setSyncDot('synced');
   } catch(e) {
-    showToast('儲存失敗，請檢查網路');
+    showToast('儲存失敗：' + e.code);
     setSyncDot('');
   }
 }
@@ -116,7 +116,7 @@ async function saveEvent(id, name, min) {
     await updateDoc(doc(db, 'users', uid, 'events', id), { name, min });
     setSyncDot('synced');
   } catch(e) {
-    showToast('更新失敗');
+    showToast('更新失敗：' + e.code);
     setSyncDot('');
   }
 }
@@ -127,61 +127,48 @@ async function deleteEvent(id) {
     await deleteDoc(doc(db, 'users', uid, 'events', id));
     setSyncDot('synced');
   } catch(e) {
-    showToast('刪除失敗');
+    showToast('刪除失敗：' + e.code);
     setSyncDot('');
   }
 }
 
-// ── Render ───────────────────────────────────────────────────────────────────
-const DAY_NAMES = ['日','一','二','三','四','五','六'];
-
+// ── Render ────────────────────────────────────────────────────────────────────
 function render() {
   const days = weekDays(weekOffset);
-  const ws = days[0], we = days[6];
-
-  $('weekRange').innerHTML =
-    fmt(ws) + ' – ' + fmt(we) +
+  $('weekRange').innerHTML = fmt(days[0]) + ' – ' + fmt(days[6]) +
     ' <span class="sync-dot"></span>';
-
   $('prevWeek').disabled = weekOffset <= -12;
   $('nextWeek').disabled = weekOffset >= 0;
   $('addBar').style.display = weekOffset === 0 ? 'flex' : 'none';
 
   const body = $('weekBody');
   body.innerHTML = '';
-
   const todayKey = dayKey(today());
 
   days.forEach((day, di) => {
-    if (day > today()) return;           // skip future days
-    const key = dayKey(day);
-    const evs = localData[key] || [];
+    if (day > today()) return;
+    const key    = dayKey(day);
+    const evs    = localData[key] || [];
     const isToday = key === todayKey;
-    const totalM = evs.reduce((s, e) => s + (e.min || 0), 0);
+    const totalM  = evs.reduce((s, e) => s + (e.min || 0), 0);
 
     const block = document.createElement('div');
     block.className = 'day-block';
 
-    // Day header
     const hdr = document.createElement('div');
     hdr.className = 'day-header';
-
     const lbl = document.createElement('span');
     lbl.className = 'day-label' + (isToday ? ' today' : '');
     lbl.textContent = isToday ? '今天' : '週' + DAY_NAMES[day.getDay()];
-
     const dt = document.createElement('span');
     dt.className = 'day-date';
     dt.textContent = fmt(day);
-
     const tot = document.createElement('span');
     tot.className = 'day-total';
     tot.textContent = totalM ? totalM + ' 分' : '';
-
     hdr.append(lbl, dt, tot);
     block.appendChild(hdr);
 
-    // Timeline
     const tl = document.createElement('div');
     tl.className = 'tl-wrap';
 
@@ -193,7 +180,6 @@ function render() {
     } else {
       evs.forEach(ev => {
         const isEd = editKey === key && editId === ev.id;
-
         const row = document.createElement('div');
         row.className = 'ev-row' + (isEd ? ' editing' : '');
 
@@ -255,21 +241,16 @@ function render() {
     }
 
     block.appendChild(tl);
-
     if (di < 6) {
       const hr = document.createElement('hr');
       hr.className = 'day-divider';
       block.appendChild(hr);
     }
-
     body.appendChild(block);
   });
 }
 
 // ── Minute picker ─────────────────────────────────────────────────────────────
-const MIN_OPTIONS = [15, 20, 25, 30, 45, 60, 90];
-let selectedMin = null;
-
 const minTrigger = $('minTrigger');
 const minDrawer  = $('minDrawer');
 const minScroll  = $('minScroll');
@@ -292,14 +273,8 @@ MIN_OPTIONS.forEach(m => {
   minScroll.appendChild(opt);
 });
 
-function openDrawer() {
-  minDrawer.classList.add('open');
-  minTrigger.classList.add('active');
-}
-function closeDrawer() {
-  minDrawer.classList.remove('open');
-  minTrigger.classList.remove('active');
-}
+function openDrawer()  { minDrawer.classList.add('open');    minTrigger.classList.add('active'); }
+function closeDrawer() { minDrawer.classList.remove('open'); minTrigger.classList.remove('active'); }
 
 minTrigger.addEventListener('click', e => {
   e.stopPropagation();
@@ -308,17 +283,15 @@ minTrigger.addEventListener('click', e => {
 document.addEventListener('click', () => closeDrawer());
 minDrawer.addEventListener('click', e => e.stopPropagation());
 
-// ── Controls ─────────────────────────────────────────────────────────────────
+// ── Controls ──────────────────────────────────────────────────────────────────
 $('prevWeek').addEventListener('click', () => {
   weekOffset--; editKey = null; editId = null;
   subscribeWeek(weekDays(weekOffset));
 });
-
 $('nextWeek').addEventListener('click', () => {
   weekOffset++; editKey = null; editId = null;
   subscribeWeek(weekDays(weekOffset));
 });
-
 $('addBtn').addEventListener('click', () => {
   const name = $('nameIn').value.trim();
   const min  = selectedMin || 0;
@@ -330,19 +303,16 @@ $('addBtn').addEventListener('click', () => {
   document.querySelectorAll('.min-opt').forEach(o => o.classList.remove('selected'));
   $('nameIn').focus();
 });
-
-[$('nameIn')].forEach(el => {
-  el.addEventListener('keydown', e => {
-    if (e.key === 'Enter') $('addBtn').click();
-  });
+$('nameIn').addEventListener('keydown', e => {
+  if (e.key === 'Enter') $('addBtn').click();
 });
 
-// ── Auth & boot ───────────────────────────────────────────────────────────────
+// ── Auth ──────────────────────────────────────────────────────────────────────
 const provider = new GoogleAuthProvider();
 
 function renderLogin() {
-  document.getElementById('app').style.display = 'none';
-  let screen = document.getElementById('loginScreen');
+  $('app').style.display = 'none';
+  let screen = $('loginScreen');
   if (!screen) {
     screen = document.createElement('div');
     screen.id = 'loginScreen';
@@ -353,7 +323,9 @@ function renderLogin() {
     const btn = document.createElement('button');
     btn.textContent = '用 Google 登入';
     btn.style.cssText = 'font-family:var(--font-body);font-size:15px;padding:11px 24px;border-radius:8px;border:1px solid var(--border-mid);background:var(--surface);color:var(--text);cursor:pointer;';
-    btn.addEventListener('click', () => signInWithPopup(auth, provider).catch(() => showToast('登入失敗，請再試')));
+    btn.addEventListener('click', () =>
+      signInWithPopup(auth, provider).catch(e => showToast('登入失敗：' + e.code))
+    );
     screen.append(title, btn);
     document.body.appendChild(screen);
   }
@@ -361,11 +333,11 @@ function renderLogin() {
 }
 
 onAuthStateChanged(auth, user => {
-  const loginScreen = document.getElementById('loginScreen');
   if (user) {
     uid = user.uid;
-    if (loginScreen) loginScreen.style.display = 'none';
-    document.getElementById('app').style.display = 'flex';
+    const s = $('loginScreen');
+    if (s) s.style.display = 'none';
+    $('app').style.display = 'flex';
     subscribeWeek(weekDays(weekOffset));
   } else {
     renderLogin();
