@@ -263,7 +263,7 @@ footer#addBar {
   cursor: pointer;
   flex-shrink: 0;
   white-space: nowrap;
-  min-width: 52px;
+  min-width: 80px;
   text-align: center;
   user-select: none;
   -webkit-user-select: none;
