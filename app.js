@@ -301,7 +301,7 @@ $('addBtn').addEventListener('click', () => {
   selectedMin = null;
   minTrigger.innerHTML = '<span class="placeholder">分</span>';
   document.querySelectorAll('.min-opt').forEach(o => o.classList.remove('selected'));
-  $('nameIn').focus();
+  focusInput();
 });
 $('nameIn').addEventListener('keydown', e => {
   if (e.key === 'Enter') $('addBtn').click();
@@ -332,6 +332,21 @@ function renderLogin() {
   screen.style.display = 'flex';
 }
 
+// ── Auto-focus 輸入框 ──────────────────────────────────────────────────────
+function focusInput() {
+  const input = $('nameIn');
+  if (!input) return;
+  // 手機上直接 focus 會彈出鍵盤，用 requestAnimationFrame 確保 DOM 就緒
+  requestAnimationFrame(() => { input.focus({ preventScroll: true }); });
+}
+
+// 頁面從背景切回前台時重新 focus（手機 / 電腦皆適用）
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && $('addBar')?.style.display !== 'none') {
+    focusInput();
+  }
+});
+
 onAuthStateChanged(auth, user => {
   if (user) {
     uid = user.uid;
@@ -339,6 +354,8 @@ onAuthStateChanged(auth, user => {
     if (s) s.style.display = 'none';
     $('app').style.display = 'flex';
     subscribeWeek(weekDays(weekOffset));
+    // 登入後自動 focus 輸入框
+    focusInput();
   } else {
     renderLogin();
   }
