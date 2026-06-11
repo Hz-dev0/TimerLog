@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/fireba
 import {
   getFirestore, collection, doc,
   onSnapshot, addDoc, updateDoc, deleteDoc,
-  query, where, orderBy, serverTimestamp
+  query, where, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import {
   getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged
@@ -33,6 +33,8 @@ let editId      = null;
 let unsub       = null;
 let localData   = {};
 let selectedMin = null;
+// pendingDelete: { id, timer }
+let pendingDelete = {};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -75,21 +77,24 @@ function colRef() { return collection(db, 'users', uid, 'events'); }
 function subscribeWeek(days) {
   if (unsub) unsub();
   const keys = days.map(dayKey);
-  // Query only by date, sort client-side to avoid needing composite index
   const q = query(colRef(), where('date', 'in', keys));
   unsub = onSnapshot(q, snap => {
     keys.forEach(k => { localData[k] = []; });
     snap.forEach(d => {
       const data = d.data();
       if (!localData[data.date]) localData[data.date] = [];
-      localData[data.date].push({
-        id:  d.id,
-        name: data.name || '',
-        min:  data.min  || 0,
-        ts:   data.ts?.toMillis?.() || 0
-      });
+      // 跳過仍有暫時 id 的樂觀項目（前綴 opt_），避免重複
+      if (!localData[data.date].find(e => e.id === d.id)) {
+        localData[data.date].push({
+          id:   d.id,
+          name: data.name || '',
+          min:  data.min  || 0,
+          ts:   data.ts?.toMillis?.() || 0
+        });
+      }
     });
-    // Sort each day by timestamp client-side
+    // 移除已被 Firestore 確認的樂觀項目（ts 為 0 代表尚未確認）
+    // 同時清掉 opt_ 前綴的孤兒（理論上不該有，防禦用）
     keys.forEach(k => {
       localData[k].sort((a, b) => a.ts - b.ts);
     });
@@ -100,18 +105,33 @@ function subscribeWeek(days) {
 }
 
 async function addEvent(name, min) {
+  // 樂觀更新：先塞暫時項目立即渲染
+  const tempId  = 'opt_' + Date.now();
+  const todayK  = dayKey(today());
+  if (!localData[todayK]) localData[todayK] = [];
+  localData[todayK].push({ id: tempId, name, min, ts: Date.now() });
+  render();
+
   setSyncDot('syncing');
   try {
-    await addDoc(colRef(), { date: dayKey(today()), name, min, ts: serverTimestamp() });
+    const ref = await addDoc(colRef(), { date: todayK, name, min, ts: serverTimestamp() });
+    // 以真實 id 替換暫時項目
+    const arr = localData[todayK];
+    const idx = arr.findIndex(e => e.id === tempId);
+    if (idx !== -1) arr[idx].id = ref.id;
     setSyncDot('synced');
+    render();
   } catch(e) {
+    // 失敗：移除樂觀項目
+    localData[todayK] = localData[todayK].filter(e => e.id !== tempId);
     showToast('儲存失敗：' + e.code);
     setSyncDot('');
+    render();
   }
 }
 
 async function saveEvent(id, name, min) {
-  // 樂觀更新：先修改本地資料立即重繪，不等 Firestore 回應
+  // 樂觀更新
   for (const key of Object.keys(localData)) {
     const ev = localData[key].find(e => e.id === id);
     if (ev) { ev.name = name; ev.min = min; break; }
@@ -129,7 +149,32 @@ async function saveEvent(id, name, min) {
   }
 }
 
-async function deleteEvent(id) {
+function requestDelete(id) {
+  // 兩段式刪除：第一次點先進入 pending，3 秒後自動取消；再點才真正刪除
+  if (pendingDelete[id]) {
+    // 已在 pending → 確認刪除
+    clearTimeout(pendingDelete[id].timer);
+    delete pendingDelete[id];
+    _doDelete(id);
+  } else {
+    // 第一次 → 進入 pending，UI 會顯示紅色
+    const timer = setTimeout(() => {
+      delete pendingDelete[id];
+      renderRow(id); // 3 秒後恢復原色
+    }, 3000);
+    pendingDelete[id] = { timer };
+    renderRow(id);   // 立即讓那筆 row 的刪除鈕變紅
+  }
+}
+
+async function _doDelete(id) {
+  // 樂觀移除
+  for (const key of Object.keys(localData)) {
+    localData[key] = localData[key].filter(e => e.id !== id);
+  }
+  if (editId === id) { editKey = null; editId = null; }
+  render();
+
   setSyncDot('syncing');
   try {
     await deleteDoc(doc(db, 'users', uid, 'events', id));
@@ -140,7 +185,116 @@ async function deleteEvent(id) {
   }
 }
 
-// ── Render ────────────────────────────────────────────────────────────────────
+// ── Render helpers ────────────────────────────────────────────────────────────
+// 只更新單一 row 的刪除鈕樣式（pending 狀態切換），不重繪整個 DOM
+function renderRow(id) {
+  const btn = document.querySelector(`.ev-del[data-id="${id}"]`);
+  if (!btn) return;
+  btn.classList.toggle('confirm', !!pendingDelete[id]);
+}
+
+// buildRow：建立一筆事件的 DOM，供 render / patchDay 共用
+function buildRow(ev, key) {
+  const isEd = editKey === key && editId === ev.id;
+  const row = document.createElement('div');
+  row.className = 'ev-row' + (isEd ? ' editing' : '');
+  row.dataset.id = ev.id;
+
+  const nm = document.createElement('div');
+  nm.className = 'ev-name' + (ev.name ? '' : ' ph');
+  nm.textContent = ev.name || '未命名…';
+
+  const mn = document.createElement('div');
+  mn.className = 'ev-min';
+  mn.textContent = ev.min ? ev.min + ' 分' : '—';
+
+  const del = document.createElement('button');
+  del.className = 'ev-del' + (pendingDelete[ev.id] ? ' confirm' : '');
+  del.textContent = '✕';
+  del.dataset.id = ev.id;
+  del.setAttribute('aria-label', '刪除');
+  del.addEventListener('click', e => {
+    e.stopPropagation();
+    requestDelete(ev.id);
+  });
+
+  row.append(nm, mn, del);
+
+  if (isEd) {
+    const ie = document.createElement('div');
+    ie.className = 'inline-edit';
+    const ni = document.createElement('input');
+    ni.type = 'text'; ni.value = ev.name; ni.placeholder = '事件名稱';
+    const ms = document.createElement('select');
+    ms.style.cssText = 'font-family:var(--font-mono);font-size:13px;padding:5px 6px;border-radius:6px;border:1px solid var(--border-mid);background:var(--bg);color:var(--text);outline:none;';
+    [0, ...MIN_OPTIONS].forEach(v => {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = v ? v + ' 分' : '—';
+      if (v === ev.min) o.selected = true;
+      ms.appendChild(o);
+    });
+    const ok = document.createElement('button');
+    ok.textContent = '儲存';
+    ok.addEventListener('click', e => {
+      e.stopPropagation();
+      saveEvent(ev.id, ni.value.trim(), parseInt(ms.value) || ev.min || 0);
+    });
+    ni.addEventListener('keydown', e => { if (e.key === 'Enter') ok.click(); });
+    ie.append(ni, ms, ok);
+    row.appendChild(ie);
+    setTimeout(() => ni.focus(), 50);
+  }
+
+  row.addEventListener('click', () => {
+    editKey === key && editId === ev.id
+      ? (editKey = null, editId = null)
+      : (editKey = key, editId = ev.id);
+    patchDay(key);
+  });
+
+  return row;
+}
+
+// patchDay：只重繪某一天的 tl-wrap，header 數字也一起更新
+function patchDay(key) {
+  const wrap = document.querySelector(`.tl-wrap[data-key="${key}"]`);
+  if (!wrap) { render(); return; }
+
+  // 更新 header total
+  const evs   = localData[key] || [];
+  const totalM = evs.reduce((s, e) => s + (e.min || 0), 0);
+  const tot = wrap.closest('.day-block')?.querySelector('.day-total');
+  if (tot) tot.textContent = totalM ? totalM + ' 分' : '';
+
+  // diff rows
+  const existing = [...wrap.querySelectorAll('.ev-row')];
+  const existingIds = existing.map(r => r.dataset.id);
+  const newIds      = evs.map(e => e.id);
+
+  // 移除消失的 row
+  existing.forEach(r => { if (!newIds.includes(r.dataset.id)) r.remove(); });
+
+  // 插入 / 更新
+  evs.forEach((ev, i) => {
+    const cur = wrap.querySelector(`.ev-row[data-id="${ev.id}"]`);
+    const newRow = buildRow(ev, key);
+    if (!cur) {
+      // 新增：插入到正確位置
+      const after = wrap.querySelectorAll('.ev-row')[i];
+      wrap.insertBefore(newRow, after || null);
+    } else {
+      // 比對是否需要換掉（editing 狀態改變、或內容改變）
+      const needsReplace =
+        cur.classList.contains('editing') !== newRow.classList.contains('editing') ||
+        cur.querySelector('.ev-name')?.textContent !== newRow.querySelector('.ev-name')?.textContent ||
+        cur.querySelector('.ev-min')?.textContent  !== newRow.querySelector('.ev-min')?.textContent ||
+        cur.querySelector('.ev-del')?.classList.contains('confirm') !== newRow.querySelector('.ev-del')?.classList.contains('confirm');
+      if (needsReplace) cur.replaceWith(newRow);
+    }
+  });
+}
+
+// ── Full render（只在週切換 / 首次載入時跑）────────────────────────────────────
 function render() {
   const days = weekDays(weekOffset);
   $('weekRange').innerHTML = fmt(days[0]) + ' – ' + fmt(days[6]) +
@@ -149,19 +303,39 @@ function render() {
   $('nextWeek').disabled = weekOffset >= 0;
   $('addBar').style.display = weekOffset === 0 ? 'flex' : 'none';
 
-  const body = $('weekBody');
-  body.innerHTML = '';
+  const body     = $('weekBody');
   const todayKey = dayKey(today());
+
+  // 已存在的 day-block map
+  const existingBlocks = {};
+  body.querySelectorAll('.day-block[data-key]').forEach(b => {
+    existingBlocks[b.dataset.key] = b;
+  });
+
+  const dayKeys = days.filter(d => d <= today()).map(dayKey);
+
+  // 移除不在本週的 block
+  Object.keys(existingBlocks).forEach(k => {
+    if (!dayKeys.includes(k)) existingBlocks[k].remove();
+  });
 
   days.forEach((day, di) => {
     if (day > today()) return;
-    const key    = dayKey(day);
-    const evs    = localData[key] || [];
+    const key     = dayKey(day);
+    const evs     = localData[key] || [];
     const isToday = key === todayKey;
     const totalM  = evs.reduce((s, e) => s + (e.min || 0), 0);
 
+    if (existingBlocks[key]) {
+      // block 已存在 → patch
+      patchDay(key);
+      return;
+    }
+
+    // 建立新 block
     const block = document.createElement('div');
-    block.className = 'day-block';
+    block.className = 'day-block' + (isToday ? ' today-block' : '');
+    block.dataset.key = key;
 
     const hdr = document.createElement('div');
     hdr.className = 'day-header';
@@ -179,78 +353,21 @@ function render() {
 
     const tl = document.createElement('div');
     tl.className = 'tl-wrap';
-
-    if (evs.length === 0) {
-      // 沒有記錄時不顯示任何提示文字
-    } else {
-      evs.forEach(ev => {
-        const isEd = editKey === key && editId === ev.id;
-        const row = document.createElement('div');
-        row.className = 'ev-row' + (isEd ? ' editing' : '');
-
-        const nm = document.createElement('div');
-        nm.className = 'ev-name' + (ev.name ? '' : ' ph');
-        nm.textContent = ev.name || '未命名…';
-
-        const mn = document.createElement('div');
-        mn.className = 'ev-min';
-        mn.textContent = ev.min ? ev.min + ' 分' : '—';
-
-        const del = document.createElement('button');
-        del.className = 'ev-del';
-        del.textContent = '✕';
-        del.setAttribute('aria-label', '刪除');
-        del.addEventListener('click', e => {
-          e.stopPropagation();
-          deleteEvent(ev.id);
-          if (editId === ev.id) { editKey = null; editId = null; }
-        });
-
-        row.append(nm, mn, del);
-
-        if (isEd) {
-          const ie = document.createElement('div');
-          ie.className = 'inline-edit';
-          const ni = document.createElement('input');
-          ni.type = 'text'; ni.value = ev.name; ni.placeholder = '事件名稱';
-          const ms = document.createElement('select');
-          ms.style.cssText = 'font-family:var(--font-mono);font-size:13px;padding:5px 6px;border-radius:6px;border:1px solid var(--border-mid);background:var(--bg);color:var(--text);outline:none;';
-          [0, ...MIN_OPTIONS].forEach(v => {
-            const o = document.createElement('option');
-            o.value = v; o.textContent = v ? v + ' 分' : '—';
-            if (v === ev.min) o.selected = true;
-            ms.appendChild(o);
-          });
-          const ok = document.createElement('button');
-          ok.textContent = '儲存';
-          ok.addEventListener('click', e => {
-            e.stopPropagation();
-            saveEvent(ev.id, ni.value.trim(), parseInt(ms.value) || ev.min || 0);
-          });
-          ni.addEventListener('keydown', e => { if (e.key === 'Enter') ok.click(); });
-          ie.append(ni, ms, ok);
-          row.appendChild(ie);
-          setTimeout(() => ni.focus(), 50);
-        }
-
-        row.addEventListener('click', () => {
-          editKey === key && editId === ev.id
-            ? (editKey = null, editId = null)
-            : (editKey = key, editId = ev.id);
-          render();
-        });
-
-        tl.appendChild(row);
-      });
-    }
-
+    tl.dataset.key = key;
+    evs.forEach(ev => tl.appendChild(buildRow(ev, key)));
     block.appendChild(tl);
+
     if (di < 6) {
       const hr = document.createElement('hr');
       hr.className = 'day-divider';
       block.appendChild(hr);
     }
-    body.appendChild(block);
+
+    // 插入到正確順序位置
+    const dayIndex = dayKeys.indexOf(key);
+    const blocks = [...body.querySelectorAll('.day-block[data-key]')];
+    const insertBefore = blocks.find(b => dayKeys.indexOf(b.dataset.key) > dayIndex);
+    body.insertBefore(block, insertBefore || null);
   });
 }
 
@@ -336,15 +453,13 @@ function renderLogin() {
   screen.style.display = 'flex';
 }
 
-// ── Auto-focus 輸入框 ──────────────────────────────────────────────────────
+// ── Auto-focus ────────────────────────────────────────────────────────────────
 function focusInput() {
   const input = $('nameIn');
   if (!input) return;
-  // 手機上直接 focus 會彈出鍵盤，用 requestAnimationFrame 確保 DOM 就緒
   requestAnimationFrame(() => { input.focus({ preventScroll: true }); });
 }
 
-// 頁面從背景切回前台時重新 focus（手機 / 電腦皆適用）
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && $('addBar')?.style.display !== 'none') {
     focusInput();
@@ -358,7 +473,6 @@ onAuthStateChanged(auth, user => {
     if (s) s.style.display = 'none';
     $('app').style.display = 'flex';
     subscribeWeek(weekDays(weekOffset));
-    // 登入後自動 focus 輸入框
     focusInput();
   } else {
     renderLogin();
