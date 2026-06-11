@@ -111,6 +111,14 @@ async function addEvent(name, min) {
 }
 
 async function saveEvent(id, name, min) {
+  // 樂觀更新：先修改本地資料立即重繪，不等 Firestore 回應
+  for (const key of Object.keys(localData)) {
+    const ev = localData[key].find(e => e.id === id);
+    if (ev) { ev.name = name; ev.min = min; break; }
+  }
+  editKey = null; editId = null;
+  render();
+
   setSyncDot('syncing');
   try {
     await updateDoc(doc(db, 'users', uid, 'events', id), { name, min });
@@ -173,10 +181,7 @@ function render() {
     tl.className = 'tl-wrap';
 
     if (evs.length === 0) {
-      const emp = document.createElement('div');
-      emp.className = 'day-empty';
-      emp.textContent = isToday ? '尚無記錄' : '無記錄';
-      tl.appendChild(emp);
+      // 沒有記錄時不顯示任何提示文字
     } else {
       evs.forEach(ev => {
         const isEd = editKey === key && editId === ev.id;
@@ -221,7 +226,6 @@ function render() {
           ok.addEventListener('click', e => {
             e.stopPropagation();
             saveEvent(ev.id, ni.value.trim(), parseInt(ms.value) || ev.min || 0);
-            editKey = null; editId = null;
           });
           ni.addEventListener('keydown', e => { if (e.key === 'Enter') ok.click(); });
           ie.append(ni, ms, ok);
