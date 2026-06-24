@@ -500,33 +500,22 @@ function renderUserBar() {
   $('app').insertBefore(bar, $('app').firstChild);
 }
 
-// ── UID 白名單（在這裡填入允許的 UID）─────────────────────────────────────────
-const ALLOWED_UIDS = new Set([
-  // 'PASTE_YOUR_UID_HERE',
-]);
-
 onAuthStateChanged(auth, async user => {
   if (user) {
-    const allowed = ALLOWED_UIDS.has(user.uid);
-    if (allowed) {
-      // 白名單內：直接進入 app，不顯示 UID
-      uid = user.uid;
-      const s = $('loginScreen');
-      if (s) s.style.display = 'none';
-      renderUidScreen(null); // 清掉若有殘留
-      $('app').style.display = 'flex';
-      subscribeWeek(weekDays(weekOffset));
-      focusInput();
-    } else {
-      // 非白名單：顯示 UID 畫面，不進入 app，不碰 Firestore
-      $('app').style.display = 'none';
-      const s = $('loginScreen');
-      if (s) s.style.display = 'none';
-      renderUidScreen(user);
-    }
+    // 直接進入 app，安全由 Firestore Rules 把關
+    uid = user.uid;
+    const s = $('loginScreen');
+    if (s) s.style.display = 'none';
+    renderUidScreen(null);
+    $('app').style.display = 'flex';
+    renderUserBar();
+    subscribeWeek(weekDays(weekOffset));
+    focusInput();
   } else {
     uid = null;
     renderUidScreen(null);
+    const bar = $('userBar');
+    if (bar) bar.remove();
     renderLogin();
   }
 });
