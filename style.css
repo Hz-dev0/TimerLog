@@ -350,6 +350,120 @@ footer#addBar {
 }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+/* ── Login screen ── */
+#loginScreen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.login-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 32px;
+}
+
+.login-title {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--text);
+  letter-spacing: 0.04em;
+}
+
+.login-sub {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.google-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 1px solid var(--border-mid);
+  background: var(--surface);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.google-btn:hover {
+  background: var(--bg);
+  border-color: var(--muted);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+}
+.google-btn:active { transform: scale(0.95); }
+
+/* ── User bar (shown after login) ── */
+#userBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.uid-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.uid-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+.uid-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  transition: background 0.12s, border-color 0.12s;
+  max-width: 220px;
+}
+.uid-value:hover {
+  background: var(--bg);
+  border-color: var(--border-mid);
+}
+
+.signout-btn {
+  font-family: var(--font-body);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-mid);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.12s, border-color 0.12s;
+}
+.signout-btn:hover { color: var(--text); border-color: var(--muted); }
+
 /* ── Sync indicator ── */
 .sync-dot {
   width: 6px; height: 6px;
