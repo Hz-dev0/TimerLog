@@ -477,3 +477,46 @@ footer#addBar {
 .sync-dot.syncing { background: #E8A838; animation: pulse 1s infinite; }
 .sync-dot.synced { background: #5BAD7A; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* ── UID display screen (non-whitelist) ── */
+#uidScreen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.uid-display-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border-mid);
+  background: var(--surface);
+  max-width: 300px;
+}
+
+.uid-display-text {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  word-break: break-all;
+  flex: 1;
+  user-select: all;
+}
+
+.uid-copy-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: color 0.12s;
+}
+.uid-copy-btn:hover { color: var(--text); }
