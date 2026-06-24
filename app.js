@@ -5,7 +5,7 @@ import {
   query, where, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import {
-  getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged
+  getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
@@ -485,57 +485,97 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-function renderUserBar(user) {
-  let bar = $('userBar');
-  if (!bar) {
-    bar = document.createElement('div');
-    bar.id = 'userBar';
-    bar.className = 'user-bar';
+function renderUserBar() {
+  if ($('userBar')) return;
+  const bar = document.createElement('div');
+  bar.id = 'userBar';
+  bar.className = 'user-bar';
 
-    const uidWrap = document.createElement('div');
-    uidWrap.className = 'uid-wrap';
+  const signOutBtn = document.createElement('button');
+  signOutBtn.className = 'signout-btn';
+  signOutBtn.textContent = '登出';
+  signOutBtn.addEventListener('click', () => signOut(auth));
 
-    const uidLabel = document.createElement('span');
-    uidLabel.className = 'uid-label';
-    uidLabel.textContent = 'UID';
-
-    const uidValue = document.createElement('span');
-    uidValue.className = 'uid-value';
-    uidValue.id = 'uidValue';
-    uidValue.title = '點擊複製';
-    uidValue.addEventListener('click', () => {
-      navigator.clipboard?.writeText(user.uid).then(() => showToast('UID 已複製'));
-    });
-
-    uidWrap.append(uidLabel, uidValue);
-
-    const signOutBtn = document.createElement('button');
-    signOutBtn.className = 'signout-btn';
-    signOutBtn.textContent = '登出';
-    signOutBtn.addEventListener('click', () => {
-      import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js')
-        .then(({ signOut }) => signOut(auth));
-    });
-
-    bar.append(uidWrap, signOutBtn);
-    $('app').insertBefore(bar, $('app').firstChild);
-  }
-  $('uidValue').textContent = user.uid;
+  bar.appendChild(signOutBtn);
+  $('app').insertBefore(bar, $('app').firstChild);
 }
 
-onAuthStateChanged(auth, user => {
+// ── UID 白名單（在這裡填入允許的 UID）─────────────────────────────────────────
+const ALLOWED_UIDS = new Set([
+  // 'PASTE_YOUR_UID_HERE',
+]);
+
+onAuthStateChanged(auth, async user => {
   if (user) {
-    uid = user.uid;
-    const s = $('loginScreen');
-    if (s) s.style.display = 'none';
-    $('app').style.display = 'flex';
-    renderUserBar(user);
-    subscribeWeek(weekDays(weekOffset));
-    focusInput();
+    const allowed = ALLOWED_UIDS.has(user.uid);
+    if (allowed) {
+      // 白名單內：直接進入 app，不顯示 UID
+      uid = user.uid;
+      const s = $('loginScreen');
+      if (s) s.style.display = 'none';
+      renderUidScreen(null); // 清掉若有殘留
+      $('app').style.display = 'flex';
+      subscribeWeek(weekDays(weekOffset));
+      focusInput();
+    } else {
+      // 非白名單：顯示 UID 畫面，不進入 app，不碰 Firestore
+      $('app').style.display = 'none';
+      const s = $('loginScreen');
+      if (s) s.style.display = 'none';
+      renderUidScreen(user);
+    }
   } else {
     uid = null;
-    const bar = $('userBar');
-    if (bar) bar.remove();
+    renderUidScreen(null);
     renderLogin();
   }
 });
+
+function renderUidScreen(user) {
+  let screen = $('uidScreen');
+  if (!user) {
+    if (screen) screen.remove();
+    return;
+  }
+  if (!screen) {
+    screen = document.createElement('div');
+    screen.id = 'uidScreen';
+
+    const inner = document.createElement('div');
+    inner.className = 'login-inner';
+
+    const label = document.createElement('p');
+    label.className = 'login-sub';
+    label.textContent = '此帳號不在白名單內';
+
+    const uidBox = document.createElement('div');
+    uidBox.className = 'uid-display-box';
+
+    const uidText = document.createElement('span');
+    uidText.id = 'uidDisplayText';
+    uidText.className = 'uid-display-text';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'uid-copy-btn';
+    copyBtn.title = '複製 UID';
+    copyBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard?.writeText($('uidDisplayText').textContent)
+        .then(() => showToast('UID 已複製'));
+    });
+
+    uidBox.append(uidText, copyBtn);
+
+    const logoutBtn = document.createElement('button');
+    logoutBtn.className = 'google-btn';
+    logoutBtn.style.cssText = 'margin-top:8px;width:auto;padding:8px 16px;border-radius:8px;font-size:13px;gap:6px;';
+    logoutBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span style="font-family:var(--font-body);color:var(--muted)">登出</span>`;
+    logoutBtn.addEventListener('click', () => signOut(auth));
+
+    inner.append(label, uidBox, logoutBtn);
+    screen.appendChild(inner);
+    document.body.appendChild(screen);
+  }
+  $('uidDisplayText').textContent = user.uid;
+  screen.style.display = 'flex';
+}
