@@ -22,7 +22,7 @@ const db   = getFirestore(firebaseApp);
 const auth = getAuth(firebaseApp);
 
 // ── Constants ────────────────────────────────────────────────────────────────
-const MIN_OPTIONS = [15, 20, 25, 30, 45, 60, 90];
+const MIN_OPTIONS = [5, 15, 20, 25, 30, 45, 60, 90];
 const DAY_NAMES   = ['日','一','二','三','四','五','六'];
 
 // ── State ─────────────────────────────────────────────────────────────────────
