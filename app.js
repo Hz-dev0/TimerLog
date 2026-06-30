@@ -39,7 +39,15 @@ let pendingDelete = {};
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 
-function dayKey(d) { return d.toISOString().slice(0, 10); }
+function dayKey(d) {
+  // 注意：不可用 d.toISOString()，那會轉成 UTC，在台灣等 UTC+8 地區
+  // 會把本地午夜的日期往前推一天，導致所有紀錄被存成前一天。
+  // 一律用本地時間自行組字串。
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 function today() {
   const d = new Date(); d.setHours(0, 0, 0, 0); return d;

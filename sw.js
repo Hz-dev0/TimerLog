@@ -3,12 +3,13 @@
 const CACHE_NAME = 'timerlog-__COMMIT_HASH__';
 
 const PRECACHE_URLS = [
-  '/',
-  '/index.html',
-  '/style.css',
-  '/app.js',
-  '/manifest.json',
-  '/icon.png'
+  './',
+  './index.html',
+  './style.css',
+  './app.js',
+  './manifest.json',
+  './icon-192.png',
+  './icon-512.png'
 ];
 
 // ── Install ───────────────────────────────────────────────────────────────────
